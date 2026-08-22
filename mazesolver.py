@@ -8,8 +8,9 @@ pygame.init()
 
 # Constants
 WIDTH, HEIGHT = 600, 600
-ROWS, COLS = 20, 20
+ROWS, COLS = 50, 50
 CELL_SIZE = WIDTH // COLS
+VISUALIZATION_DELAY = 0.002
 
 # Colors
 BLACK = (0, 0, 0)  # Walls
@@ -105,7 +106,7 @@ def solve_maze(maze, start, end, algorithm):
         path.append((x, y))
         draw_maze(maze, path, [], start, end)
         pygame.display.update()
-        time.sleep(0.01)
+        time.sleep(VISUALIZATION_DELAY)
 
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             new_x, new_y = x + dx, y + dy
