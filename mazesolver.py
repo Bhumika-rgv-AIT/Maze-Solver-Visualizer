@@ -2,15 +2,14 @@ import pygame
 import random
 import time
 import heapq
-
-# Initialize pygame
-pygame.init()
+from collections import deque
 
 # Constants
 WIDTH, HEIGHT = 600, 600
 ROWS, COLS = 50, 50
 CELL_SIZE = WIDTH // COLS
 VISUALIZATION_DELAY = 0.002
+WALL_PROBABILITY = 0.35
 
 # Colors
 BLACK = (0, 0, 0)  # Walls
@@ -26,9 +25,11 @@ BFS_COLOR = (114, 9, 183)
 ASTAR_COLOR = (58, 12, 163)
 DIJKSTRA_COLOR = (67, 97, 238)
 
-# Initialize screen
-screen = pygame.display.set_mode((WIDTH, HEIGHT + 50))  # Extra space for buttons
-pygame.display.set_caption("Maze Solver")
+screen = None
+solve_button = None
+stop_button = None
+randomize_button = None
+toggle_button = None
 
 
 # Heuristic function for A*
@@ -38,10 +39,11 @@ def heuristic(a, b):
 
 # Check if a maze is solvable using BFS
 def is_solvable(maze, start, end):
-    queue = [start]
+    queue = deque([start])
     visited = set()
+    rows, cols = len(maze), len(maze[0])
     while queue:
-        x, y = queue.pop(0)
+        x, y = queue.popleft()
         if (x, y) == end:
             return True
         if (x, y) in visited:
@@ -49,19 +51,41 @@ def is_solvable(maze, start, end):
         visited.add((x, y))
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             new_x, new_y = x + dx, y + dy
-            if 0 <= new_x < ROWS and 0 <= new_y < COLS and maze[new_x][new_y] == 0:
+            if 0 <= new_x < rows and 0 <= new_y < cols and maze[new_x][new_y] == 0:
                 queue.append((new_x, new_y))
     return False
 
 
+# Carve a random route so larger mazes are always generated quickly.
+def carve_guaranteed_path(maze, start, end):
+    x, y = start
+    maze[x][y] = 0
+
+    while (x, y) != end:
+        choices = []
+        if x < end[0]:
+            choices.append((x + 1, y))
+        elif x > end[0]:
+            choices.append((x - 1, y))
+        if y < end[1]:
+            choices.append((x, y + 1))
+        elif y > end[1]:
+            choices.append((x, y - 1))
+
+        x, y = random.choice(choices)
+        maze[x][y] = 0
+
+
 # Generate a solvable maze
 def generate_solvable_maze(rows, cols, start, end):
-    while True:
-        maze = [[random.choice([0, 1]) for _ in range(cols)] for _ in range(rows)]
-        maze[start[0]][start[1]] = 0
-        maze[end[0]][end[1]] = 0
-        if is_solvable(maze, start, end):
-            return maze
+    maze = [
+        [1 if random.random() < WALL_PROBABILITY else 0 for _ in range(cols)]
+        for _ in range(rows)
+    ]
+    carve_guaranteed_path(maze, start, end)
+    maze[start[0]][start[1]] = 0
+    maze[end[0]][end[1]] = 0
+    return maze
 
 
 # Draw the maze
@@ -84,20 +108,30 @@ def solve_maze(maze, start, end, algorithm):
     if algorithm in ["A*", "Dijkstra"]:
         frontier = [(0, start)]
         cost_so_far = {start: 0}
+    elif algorithm == "BFS":
+        frontier = deque([start])
     else:
-        frontier = [start] if algorithm == "DFS" else [start]
+        frontier = [start]
 
     came_from = {start: None}
     visited = set()
     path = []
+    found = False
 
     while frontier:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return None
+
         if algorithm in ["A*", "Dijkstra"]:
             _, (x, y) = heapq.heappop(frontier)
+        elif algorithm == "BFS":
+            x, y = frontier.popleft()
         else:
-            x, y = frontier.pop() if algorithm == "DFS" else frontier.pop(0)
+            x, y = frontier.pop()
 
         if (x, y) == end:
+            found = True
             break
         if (x, y) in visited:
             continue
@@ -122,6 +156,9 @@ def solve_maze(maze, start, end, algorithm):
                 else:
                     frontier.append((new_x, new_y))
                 came_from[(new_x, new_y)] = (x, y)
+
+    if not found:
+        return []
 
     final_path = []
     cur = end
@@ -149,40 +186,53 @@ def draw_buttons(current_algo):
     pygame.display.update()
 
 
-# Game Setup
-start, end = (0, 0), (ROWS - 1, COLS - 1)
-maze = generate_solvable_maze(ROWS, COLS, start, end)
-final_path = []
-current_algo = "DFS"
+def main():
+    global screen, solve_button, stop_button, randomize_button, toggle_button
 
-# Buttons
-solve_button = pygame.Rect(50, HEIGHT + 10, 100, 30)
-stop_button = pygame.Rect(180, HEIGHT + 10, 100, 30)
-randomize_button = pygame.Rect(310, HEIGHT + 10, 120, 30)
-toggle_button = pygame.Rect(450, HEIGHT + 10, 120, 30)
+    pygame.init()
+    screen = pygame.display.set_mode((WIDTH, HEIGHT + 50))  # Extra space for buttons
+    pygame.display.set_caption("Maze Solver")
 
-# Game Loop
-running = True
-while running:
-    draw_maze(maze, [], final_path, start, end)
-    draw_buttons(current_algo)
+    start, end = (0, 0), (ROWS - 1, COLS - 1)
+    maze = generate_solvable_maze(ROWS, COLS, start, end)
+    final_path = []
+    current_algo = "DFS"
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if solve_button.collidepoint(event.pos):
-                final_path = solve_maze(maze, start, end, current_algo)
-            elif stop_button.collidepoint(event.pos):
-                final_path = []
-            elif randomize_button.collidepoint(event.pos):
-                maze = generate_solvable_maze(ROWS, COLS, start, end)
-                final_path = []
-            elif toggle_button.collidepoint(event.pos):
-                algorithms = ["DFS", "BFS", "A*", "Dijkstra"]
-                current_algo = algorithms[(algorithms.index(current_algo) + 1) % len(algorithms)]
+    solve_button = pygame.Rect(50, HEIGHT + 10, 100, 30)
+    stop_button = pygame.Rect(180, HEIGHT + 10, 100, 30)
+    randomize_button = pygame.Rect(310, HEIGHT + 10, 120, 30)
+    toggle_button = pygame.Rect(450, HEIGHT + 10, 120, 30)
 
-    pygame.display.flip()
-    pygame.time.Clock().tick(60)
+    clock = pygame.time.Clock()
+    running = True
+    while running:
+        draw_maze(maze, [], final_path, start, end)
+        draw_buttons(current_algo)
 
-pygame.quit()
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if solve_button.collidepoint(event.pos):
+                    solved_path = solve_maze(maze, start, end, current_algo)
+                    if solved_path is None:
+                        running = False
+                    else:
+                        final_path = solved_path
+                elif stop_button.collidepoint(event.pos):
+                    final_path = []
+                elif randomize_button.collidepoint(event.pos):
+                    maze = generate_solvable_maze(ROWS, COLS, start, end)
+                    final_path = []
+                elif toggle_button.collidepoint(event.pos):
+                    algorithms = ["DFS", "BFS", "A*", "Dijkstra"]
+                    current_algo = algorithms[(algorithms.index(current_algo) + 1) % len(algorithms)]
+
+        pygame.display.flip()
+        clock.tick(60)
+
+    pygame.quit()
+
+
+if __name__ == "__main__":
+    main()
